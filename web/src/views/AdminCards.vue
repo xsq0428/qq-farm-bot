@@ -7,6 +7,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import { useToastStore } from '@/stores/toast'
+import { copyTextToClipboard } from '@/utils/clipboard'
 
 const toastStore = useToastStore()
 const dialog = useDialog()
@@ -35,11 +36,11 @@ async function loadCards() {
 
 async function copyText(text: string, tip: string) {
   if (!text) return
-  try {
-    await navigator.clipboard.writeText(text)
+  const ok = await copyTextToClipboard(text)
+  if (ok) {
     toastStore.success(tip)
   }
-  catch {
+  else {
     toastStore.error('复制失败，请手动复制')
   }
 }

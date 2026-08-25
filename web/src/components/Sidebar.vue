@@ -12,6 +12,7 @@ import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/ac
 import { useAppStore } from '@/stores/app'
 import { useStatusStore } from '@/stores/status'
 import { useUserStore } from '@/stores/user'
+import { copyTextToClipboard } from '@/utils/clipboard'
 
 const accountStore = useAccountStore()
 const statusStore = useStatusStore()
@@ -274,15 +275,15 @@ async function copyToken() {
   if (!tokenValue)
     return
 
-  try {
-    await navigator.clipboard.writeText(tokenValue)
+  const ok = await copyTextToClipboard(tokenValue)
+  if (ok) {
     tokenCopied.value = true
     setTimeout(() => {
       tokenCopied.value = false
     }, 2000)
   }
-  catch (e) {
-    console.error('复制失败', e)
+  else {
+    console.error('复制失败')
   }
 }
 </script>
