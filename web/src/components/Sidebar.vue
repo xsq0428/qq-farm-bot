@@ -229,7 +229,12 @@ const connectionStatus = computed(() => {
 })
 
 const navItems = computed(() => {
+  const currentRole = userStore.role || 'admin'
   return menuRoutes
+    .filter((item) => {
+      if (!item.meta?.roles) return true
+      return item.meta.roles.includes(currentRole as 'admin' | 'user')
+    })
     .map(item => ({
       path: item.path ? `/${item.path}` : '/',
       label: item.label,

@@ -86,6 +86,21 @@ router.beforeEach(async (to, _from) => {
     return { name: 'login' }
   }
 
+  // 角色权限
+  const requiredRoles = (to.meta as any)?.roles as Array<'admin' | 'user'> | undefined
+  if (requiredRoles && requiredRoles.length) {
+    let role: string = 'admin'
+    try {
+      role = (JSON.parse(localStorage.getItem('user_info') || 'null'))?.role || 'admin'
+    }
+    catch {
+      role = 'admin'
+    }
+    if (!requiredRoles.includes(role as 'admin' | 'user')) {
+      return { name: 'dashboard' }
+    }
+  }
+
   return true
 })
 

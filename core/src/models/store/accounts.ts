@@ -46,6 +46,7 @@ function normalizeAccount(raw: any): Account {
         createdAt: Number(source.createdAt) || Date.now(),
         updatedAt: Number(source.updatedAt) || Date.now(),
     };
+    if (source.userId) account.userId = String(source.userId);
     const nick = String(source.nick || '').trim();
     if (nick) account.nick = nick;
     return account;
@@ -57,14 +58,16 @@ function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string }): Acc
     let touchedAccountId = '';
     const source: any = acc || {};
     const cleanAccount: any = {};
-    for (const key of ['id', 'name', 'code', 'platform', 'uin', 'qq', 'avatar', 'avatarUrl', 'nick']) {
+    for (const key of ['id', 'name', 'code', 'platform', 'uin', 'qq', 'avatar', 'avatarUrl', 'nick', 'userId']) {
         if (source[key] !== undefined) cleanAccount[key] = source[key];
     }
     acc = cleanAccount;
     if (acc.id) {
         const idx = data.accounts.findIndex(a => a.id === acc.id);
         if (idx >= 0) {
-            data.accounts[idx] = { ...data.accounts[idx], ...acc, name: acc.name !== undefined ? acc.name : data.accounts[idx].name, updatedAt: Date.now() };
+            const merged = { ...data.accounts[idx], ...acc, name: acc.name !== undefined ? acc.name : data.accounts[idx].name, updatedAt: Date.now() };
+            if (merged.userId) data.accounts[idx] = merged;
+            else data.accounts[idx] = { ...merged, userId: data.accounts[idx].userId };
             touchedAccountId = String(data.accounts[idx].id || '');
         }
     } else {
@@ -78,6 +81,7 @@ function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string }): Acc
             uin: acc.uin ? String(acc.uin) : '',
             qq: acc.qq ? String(acc.qq) : (acc.uin ? String(acc.uin) : ''),
             avatar: acc.avatar || acc.avatarUrl || '',
+            userId: acc.userId ? String(acc.userId) : '',
             createdAt: Date.now(),
             updatedAt: Date.now(),
         });
@@ -87,6 +91,13 @@ function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string }): Acc
         ensureAccountConfig(touchedAccountId);
     }
     return data;
+}
+
+function countAccountsByUser(userId: unknown): number {
+    const data = loadAccounts();
+    const uid = String(userId || '');
+    if (!uid) return data.accounts.length;
+    return data.accounts.filter(a => String(a.userId || '') === uid).length;
 }
 
 function deleteAccount(id: unknown): AccountsData {
@@ -108,4 +119,5 @@ module.exports = {
     normalizeAccountsData,
     addOrUpdateAccount,
     deleteAccount,
+    countAccountsByUser,
 };

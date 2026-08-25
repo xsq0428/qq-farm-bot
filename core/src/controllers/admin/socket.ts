@@ -9,11 +9,22 @@ const SocketIOServer = Server;
 
 const {
     resolveAccId,
+    isUserOwnerOfAccount,
+    getAccountList,
 } = require('./middleware');
 
 function applySocketSubscription(ctx: AdminContext, socket: any, accountRef: string = ''): void {
     const incoming = String(accountRef || '').trim();
+    // 普通用户只能订阅属于自己的账号
+    const session = socket.data.session;
     const resolved = incoming && incoming !== 'all' ? resolveAccId(ctx, incoming) : '';
+    if (resolved && session && session.role === 'user') {
+        const ownedIds = getAccountList(ctx, session.userId).map((a: any) => String(a.id || ''));
+        if (!ownedIds.includes(resolved)) {
+            socket.emit('subscribed', { accountId: '', denied: true });
+            return;
+        }
+    }
 
     for (const room of socket.rooms) {
         if (room.startsWith('account:')) socket.leave(room);
@@ -21,6 +32,11 @@ function applySocketSubscription(ctx: AdminContext, socket: any, accountRef: str
     if (resolved) {
         socket.join(`account:${resolved}`);
         socket.data.accountId = resolved;
+    } else if (session && session.role === 'user') {
+        // 普通用户不订阅全局 all，避免看到其他用户账号的日志/状态
+        socket.data.accountId = '';
+        socket.emit('subscribed', { accountId: '' });
+        return;
     } else {
         socket.join('account:all');
         socket.data.accountId = '';
@@ -73,10 +89,12 @@ function setupSocketIO(ctx: AdminContext): void {
             ? String(socket.handshake.headers['x-admin-token'])
             : '';
         const token = authToken || headerToken;
-        if (!token || !ctx.tokens.has(token)) {
+        const session = token ? ctx.tokens.get(token) : undefined;
+        if (!token || !session) {
             return next(new Error('Unauthorized'));
         }
         socket.data.adminToken = token;
+        socket.data.session = { role: session.role, userId: session.userId };
         return next();
     });
 

@@ -54,6 +54,7 @@ module.exports = {
     getAccounts: accounts.getAccounts,
     addOrUpdateAccount: accounts.addOrUpdateAccount,
     deleteAccount: accounts.deleteAccount,
+    countAccountsByUser: accounts.countAccountsByUser,
 
     // System config
     getSystemConfig: globalConfig.getSystemConfig,

@@ -7,9 +7,10 @@ export {};
  */
 
 const store = require('../../models/store');
-const { addOrUpdateAccount, deleteAccount } = store;
+const { addOrUpdateAccount, deleteAccount, countAccountsByUser } = store;
 const { findAccountByRef } = require('../../services/account-resolver');
 const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets, getTimeZoneOptions } = require('../../config/config');
+const userStore = require('../../models/user-store');
 
 const {
     getAccId,
@@ -17,15 +18,25 @@ const {
     handleApiError,
     getAccountList,
     resolveAccId,
+    getAuthSession,
+    isUserOwnerOfAccount,
+    createAdminRequired,
 } = require('./middleware');
 
 function mountAccountRoutes(app: Application, ctx: AdminContext): void {
+    const adminRequired = createAdminRequired(ctx);
 
     // API: 账号管理
     app.get('/api/accounts', (req: Request, res: Response) => {
         try {
+            const session = getAuthSession(req);
+            const isAdmin = session?.role === 'admin';
             const data = ctx.provider.getAccounts();
-            res.json({ ok: true, data });
+            const filtered = {
+                ...data,
+                accounts: isAdmin ? data.accounts : data.accounts.filter((a: any) => String(a.userId || '') === String(session?.userId || '')),
+            };
+            res.json({ ok: true, data: filtered });
         } catch (e: any) {
             res.status(500).json({ ok: false, error: e.message });
         }
@@ -40,6 +51,12 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const target = findAccountByRef(accountList, rawRef);
             if (!target || !target.id) {
                 return res.status(404).json({ ok: false, error: 'Account not found' });
+            }
+
+            // 普通用户只能操作自己的账号
+            const session = getAuthSession(req);
+            if (session && session.role === 'user' && !isUserOwnerOfAccount(session, target)) {
+                return res.status(403).json({ ok: false, error: '无权操作该账号' });
             }
 
             const remark = String(body.remark !== undefined ? body.remark : body.name || '').trim();
@@ -74,8 +91,25 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const updateRef = body.id || (remarkMatchedAccount && remarkMatchedAccount.id) || '';
             const isUpdate = !!updateRef;
 
+            const session = getAuthSession(req);
+            const isAdmin = session?.role === 'admin';
+
+            // 普通用户添加账号：绑定 userId 并校验配额
+            let boundUserId = undefined;
+            if (!isUpdate && !isAdmin && session?.userId) {
+                const used = countAccountsByUser(session.userId);
+                const quota = userStore.getQuota(session.userId, used);
+                if (quota && quota.remaining <= 0) {
+                    return res.status(400).json({ ok: false, error: `账号数量已达上限（${quota.maxAccounts}），请兑换卡密后重试` });
+                }
+                boundUserId = session.userId;
+            }
+
             const resolvedUpdateId = isUpdate ? resolveAccId(ctx, updateRef) : '';
-            const payload = isUpdate ? { ...body, id: resolvedUpdateId || String(updateRef) } : body;
+            const payload = {
+                ...(isUpdate ? { ...body, id: resolvedUpdateId || String(updateRef) } : body),
+                ...(boundUserId ? { userId: boundUserId } : {}),
+            };
             let wasRunning = false;
             if (isUpdate && ctx.provider.isAccountRunning) {
                 wasRunning = ctx.provider.isAccountRunning(payload.id);
@@ -132,6 +166,13 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
 
             const before = ctx.provider.getAccounts();
             const target = findAccountByRef(before.accounts || [], req.params.id);
+
+            // 普通用户只能删除自己的账号
+            const session = getAuthSession(req);
+            if (session && session.role === 'user' && !isUserOwnerOfAccount(session, target)) {
+                return res.status(403).json({ ok: false, error: '无权操作该账号' });
+            }
+
             ctx.provider.stopAccount(resolvedId);
             const data = deleteAccount(resolvedId);
             if (ctx.provider.addAccountLog) {
@@ -159,11 +200,13 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
 
     // API: 日志
     app.get('/api/logs', (req: Request, res: Response) => {
+        const session = getAuthSession(req);
+        const isAdmin = session?.role === 'admin';
         const queryAccountIdRaw = (req.query.accountId || '').toString().trim();
         const id = queryAccountIdRaw ? (queryAccountIdRaw === 'all' ? '' : resolveAccId(ctx, queryAccountIdRaw)) : getAccId(ctx, req);
         // 如果没有指定账号ID，获取所有账号的日志
         if (!id) {
-            const accountIds = getAccountIds(ctx);
+            const accountIds = getAccountIds(ctx, isAdmin ? undefined : session?.userId);
             const allLogs: any[] = [];
             const options = {
                 limit: Number.parseInt(req.query.limit as string) || 100,
@@ -405,7 +448,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
-    app.get('/api/settings/system-config', (_req: Request, res: Response) => {
+    app.get('/api/settings/system-config', adminRequired, (_req: Request, res: Response) => {
         try {
             res.json({
                 ok: true,
@@ -421,7 +464,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
-    app.post('/api/settings/system-config', (req: Request, res: Response) => {
+    app.post('/api/settings/system-config', adminRequired, (req: Request, res: Response) => {
         try {
             const { serverUrl, clientVersion, platform, os, timeZone, deviceInfo } = req.body || {};
             const saved = store.setSystemConfig({ serverUrl, clientVersion, platform, os, timeZone, deviceInfo });
@@ -435,7 +478,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
-    app.post('/api/settings/system-config/reset', (_req: Request, res: Response) => {
+    app.post('/api/settings/system-config/reset', adminRequired, (_req: Request, res: Response) => {
         try {
             const saved = getDefaultSystemConfig();
             store.setSystemConfig(saved);

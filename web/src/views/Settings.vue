@@ -28,9 +28,15 @@ type SettingsTab = 'account' | 'strategy' | 'automation' | 'system'
 const storedTab = localStorage.getItem('settings-active-tab')
 const settingsTabKeys: SettingsTab[] = ['account', 'strategy', 'automation', 'system']
 const queryTab = String(route.query.tab || '')
-const initialTab = settingsTabKeys.includes(queryTab as SettingsTab)
-  ? queryTab as SettingsTab
-  : storedTab === 'user' ? 'system' : (storedTab as SettingsTab) || 'account'
+const initialTab = (() => {
+  const candidate = settingsTabKeys.includes(queryTab as SettingsTab)
+    ? queryTab as SettingsTab
+    : storedTab === 'user' ? 'system' : (storedTab as SettingsTab) || 'account'
+  // 普通用户不允许系统设置 tab
+  if (candidate === 'system' && !userStore.isAdmin)
+    return 'account' as SettingsTab
+  return candidate
+})()
 const activeTab = ref<SettingsTab>(initialTab)
 
 watch(activeTab, (newTab) => {
@@ -44,19 +50,25 @@ watch(activeTab, (newTab) => {
 
 watch(() => route.query.tab, (value) => {
   const nextTab = String(value || '')
+  if (nextTab === 'system' && !userStore.isAdmin)
+    return
   if (settingsTabKeys.includes(nextTab as SettingsTab) && nextTab !== activeTab.value)
     activeTab.value = nextTab as SettingsTab
 })
 
-const tabs = [
-  { key: 'account', label: '账号管理', icon: 'i-carbon-user-profile' },
-  { key: 'strategy', label: '策略设置', icon: 'i-carbon-settings-adjust' },
-  { key: 'automation', label: '自动控制', icon: 'i-carbon-settings-adjust' },
-  { key: 'system', label: '系统设置', icon: 'i-carbon-settings' },
-] as const
+const tabs = computed(() => {
+  const base: Array<{ key: string, label: string, icon: string }> = [
+    { key: 'account', label: '账号管理', icon: 'i-carbon-user-profile' },
+    { key: 'strategy', label: '策略设置', icon: 'i-carbon-settings-adjust' },
+    { key: 'automation', label: '自动控制', icon: 'i-carbon-settings-adjust' },
+  ]
+  if (userStore.isAdmin)
+    base.push({ key: 'system', label: '系统设置', icon: 'i-carbon-settings' })
+  return base
+})
 
 function setActiveTab(value: string) {
-  if (tabs.some(tab => tab.key === value))
+  if (tabs.value.some(tab => tab.key === value))
     activeTab.value = value as typeof activeTab.value
 }
 

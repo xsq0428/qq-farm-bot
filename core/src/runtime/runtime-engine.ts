@@ -167,6 +167,20 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
             startAdminServer(dataProvider);
         }
 
+        // 定时降级：扫描过期时长卡用户，恢复基础配额
+        const { reconcileExpired } = require('../models/user-store');
+        const reconcileTimer = setInterval(() => {
+            try {
+                const expired = reconcileExpired();
+                if (expired.length > 0) {
+                    log('系统', `时长卡过期降级用户: ${expired.join(', ')}`);
+                }
+            } catch (e) {
+                log('系统', `用户配额降级扫描失败: ${e && e.message ? e.message : String(e)}`);
+            }
+        }, 60 * 1000);
+        reconcileTimer.unref?.();
+
         if (shouldAutoStartAccounts) {
             startAllAccounts();
         }

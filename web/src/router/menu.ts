@@ -6,6 +6,7 @@ export interface MenuItem {
   component: () => Promise<any>
   meta?: {
     fullBleed?: boolean
+    roles?: Array<'admin' | 'user'>
   }
 }
 
@@ -16,6 +17,14 @@ export const menuRoutes: MenuItem[] = [
     label: '概览',
     icon: 'i-carbon-dashboard',
     component: () => import('@/views/Dashboard.vue'),
+  },
+  {
+    path: 'my-account',
+    name: 'my-account',
+    label: '我的账户',
+    icon: 'i-carbon-user-avatar',
+    component: () => import('@/views/MyAccount.vue'),
+    meta: { roles: ['user'] },
   },
   {
     path: 'personal',
@@ -58,6 +67,14 @@ export const menuRoutes: MenuItem[] = [
     label: '游戏商城',
     icon: 'i-carbon-shopping-cart',
     component: () => import('@/views/GameMall.vue'),
+  },
+  {
+    path: 'admin-cards',
+    name: 'admin-cards',
+    label: '卡密管理',
+    icon: 'i-carbon-ticket',
+    component: () => import('@/views/AdminCards.vue'),
+    meta: { roles: ['admin'] },
   },
   {
     path: 'settings',

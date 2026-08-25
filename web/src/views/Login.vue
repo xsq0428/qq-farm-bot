@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { NTabs, NTabPane } from 'naive-ui'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -10,11 +11,14 @@ declare const __APP_VERSION__: string
 const userStore = useUserStore()
 const appVersion = __APP_VERSION__
 const gameVersion = ref('')
+const activeTab = ref('login')
+
+// login
 const username = ref('')
 const password = ref('')
-const error = ref('')
-const success = ref('')
-const loading = ref(false)
+const loginError = ref('')
+const loginSuccess = ref('')
+const loginLoading = ref(false)
 const lockoutRemaining = ref(0)
 const rateLimitRemaining = ref(0)
 
@@ -31,71 +35,170 @@ const usernameValid = computed(() => {
   return { valid: true, message: '' }
 })
 
-function validateForm(): boolean {
+function validateLoginForm(): boolean {
   if (!username.value) {
-    error.value = '请输入用户名'
+    loginError.value = '请输入用户名'
     return false
   }
   if (!usernameValid.value.valid) {
-    error.value = usernameValid.value.message
+    loginError.value = usernameValid.value.message
     return false
   }
   if (!password.value) {
-    error.value = '请输入密码'
+    loginError.value = '请输入密码'
     return false
   }
   return true
 }
 
-async function handleSubmit() {
-  if (!validateForm())
+async function handleLogin() {
+  if (!validateLoginForm())
     return
 
-  loading.value = true
-  error.value = ''
-  success.value = ''
+  loginLoading.value = true
+  loginError.value = ''
+  loginSuccess.value = ''
 
   try {
     const result = await userStore.login(username.value, password.value)
     if (result.ok) {
       if (result.data?.mustChangePassword)
-        success.value = '登录成功，请修改默认密码'
+        loginSuccess.value = '登录成功，请修改默认密码'
       setTimeout(() => {
         window.location.href = '/'
       }, 500)
     }
     else if (result.errorType === 'rate_limit') {
-      error.value = result.error || '请求过于频繁，请稍后重试'
+      loginError.value = result.error || '请求过于频繁，请稍后重试'
       if (result.remainingMs)
         rateLimitRemaining.value = Math.ceil(result.remainingMs / 1000)
     }
     else if (result.errorType === 'locked') {
-      error.value = result.error || '账户已被锁定'
+      loginError.value = result.error || '账户已被锁定'
       if (result.remainingMs)
         lockoutRemaining.value = Math.ceil(result.remainingMs / 1000 / 60)
     }
     else {
-      error.value = result.error || '登录失败'
+      loginError.value = result.error || '登录失败'
     }
   }
   catch (e: any) {
     const data = e.response?.data
     if (data?.errorType === 'rate_limit') {
-      error.value = data.error || '请求过于频繁'
+      loginError.value = data.error || '请求过于频繁'
       if (data.remainingMs)
         rateLimitRemaining.value = Math.ceil(data.remainingMs / 1000)
     }
     else if (data?.errorType === 'locked') {
-      error.value = data.error || '账户已被锁定'
+      loginError.value = data.error || '账户已被锁定'
       if (data.remainingMs)
         lockoutRemaining.value = Math.ceil(data.remainingMs / 1000 / 60)
     }
     else {
-      error.value = data?.error || e.message || '操作异常'
+      loginError.value = data?.error || e.message || '操作异常'
     }
   }
   finally {
-    loading.value = false
+    loginLoading.value = false
+  }
+}
+
+// register
+const regUsername = ref('')
+const regPassword = ref('')
+const regConfirmPassword = ref('')
+const regCardCode = ref('')
+const regError = ref('')
+const regSuccess = ref('')
+const regLoading = ref(false)
+
+const regUsernameValid = computed(() => {
+  const name = regUsername.value
+  if (!name)
+    return { valid: false, message: '' }
+  if (name.length < 3)
+    return { valid: false, message: '用户名至少3位' }
+  if (name.length > 32)
+    return { valid: false, message: '用户名最多32位' }
+  if (!/^\w+$/.test(name))
+    return { valid: false, message: '只能包含字母、数字、下划线' }
+  return { valid: true, message: '' }
+})
+
+const passwordsMatch = computed(() => {
+  if (!regConfirmPassword.value)
+    return { valid: false, message: '' }
+  if (regPassword.value !== regConfirmPassword.value)
+    return { valid: false, message: '两次密码不一致' }
+  return { valid: true, message: '' }
+})
+
+function validateRegisterForm(): boolean {
+  if (!regUsername.value) {
+    regError.value = '请输入用户名'
+    return false
+  }
+  if (!regUsernameValid.value.valid) {
+    regError.value = regUsernameValid.value.message
+    return false
+  }
+  if (!regPassword.value) {
+    regError.value = '请输入密码'
+    return false
+  }
+  if (regPassword.value.length < 6) {
+    regError.value = '密码至少6位'
+    return false
+  }
+  if (!regConfirmPassword.value) {
+    regError.value = '请确认密码'
+    return false
+  }
+  if (!passwordsMatch.value.valid) {
+    regError.value = passwordsMatch.value.message
+    return false
+  }
+  if (!regCardCode.value) {
+    regError.value = '请输入卡密'
+    return false
+  }
+  return true
+}
+
+async function handleRegister() {
+  if (!validateRegisterForm())
+    return
+
+  regLoading.value = true
+  regError.value = ''
+  regSuccess.value = ''
+
+  try {
+    const res = await api.post('/api/register', {
+      username: regUsername.value,
+      password: regPassword.value,
+      cardCode: regCardCode.value.trim(),
+    })
+    if (res.data?.ok) {
+      regSuccess.value = '注册成功，请登录'
+      regUsername.value = ''
+      regPassword.value = ''
+      regConfirmPassword.value = ''
+      regCardCode.value = ''
+      setTimeout(() => {
+        activeTab.value = 'login'
+      }, 1500)
+    }
+    else {
+      regError.value = res.data?.error || '注册失败'
+    }
+  }
+  catch (e: any) {
+    const data = e.response?.data
+    regError.value = data?.error || e.message || '操作异常'
+  }
+  finally {
+    regLoading.value = false
   }
 }
 
@@ -126,74 +229,170 @@ onMounted(fetchGameVersion)
             QQ农场智能助手
           </h1>
           <p class="logo-subtitle">
-            超级管理员登录
+            多租户账号系统
           </p>
         </div>
       </header>
 
-      <form class="form-area" @submit.prevent="handleSubmit">
-        <div class="form-group">
-          <label class="form-label" for="username">
-            <span class="i-carbon-user" />
-            用户名
-          </label>
-          <BaseInput
-            id="username"
-            v-model="username"
-            type="text"
-            placeholder="请输入用户名"
-            autocomplete="username"
-            required
-          />
-          <p v-if="username && !usernameValid.valid" class="form-hint error">
-            {{ usernameValid.message }}
-          </p>
-        </div>
+      <NTabs v-model:value="activeTab" type="line" animated class="mt-4">
+        <NTabPane name="login" tab="登录">
+          <form class="form-area" @submit.prevent="handleLogin">
+            <div class="form-group">
+              <label class="form-label" for="username">
+                <span class="i-carbon-user" />
+                用户名
+              </label>
+              <BaseInput
+                id="username"
+                v-model="username"
+                type="text"
+                placeholder="请输入用户名"
+                autocomplete="username"
+                required
+              />
+              <p v-if="username && !usernameValid.valid" class="form-hint error">
+                {{ usernameValid.message }}
+              </p>
+            </div>
 
-        <div class="form-group">
-          <label class="form-label" for="password">
-            <span class="i-carbon-locked" />
-            密码
-          </label>
-          <BaseInput
-            id="password"
-            v-model="password"
-            type="password"
-            placeholder="请输入密码"
-            autocomplete="current-password"
-            required
-          />
-        </div>
+            <div class="form-group">
+              <label class="form-label" for="password">
+                <span class="i-carbon-locked" />
+                密码
+              </label>
+              <BaseInput
+                id="password"
+                v-model="password"
+                type="password"
+                placeholder="请输入密码"
+                autocomplete="current-password"
+                required
+              />
+            </div>
 
-        <div v-if="error" class="message error-message" role="alert">
-          <span class="i-carbon-warning-alt" />
-          <div>
-            {{ error }}
-            <span v-if="lockoutRemaining > 0">（{{ lockoutRemaining }} 分钟后解锁）</span>
-            <span v-if="rateLimitRemaining > 0">（{{ rateLimitRemaining }} 秒后可重试）</span>
+            <div v-if="loginError" class="message error-message" role="alert">
+              <span class="i-carbon-warning-alt" />
+              <div>
+                {{ loginError }}
+                <span v-if="lockoutRemaining > 0">（{{ lockoutRemaining }} 分钟后解锁）</span>
+                <span v-if="rateLimitRemaining > 0">（{{ rateLimitRemaining }} 秒后可重试）</span>
+              </div>
+            </div>
+            <div v-if="loginSuccess" class="message success-message" role="status">
+              <span class="i-carbon-checkmark-filled" />
+              {{ loginSuccess }}
+            </div>
+
+            <BaseButton type="submit" variant="primary" block :loading="loginLoading" class="submit-btn">
+              <span v-if="!loginLoading" class="inline-flex items-center gap-2">
+                <span class="i-carbon-login" />
+                登录
+              </span>
+            </BaseButton>
+          </form>
+        </NTabPane>
+
+        <NTabPane name="register" tab="注册">
+          <div class="register-hint">
+            <span class="i-carbon-information-circle" />
+            注册需要卡密，请联系管理员获取
           </div>
-        </div>
-        <div v-if="success" class="message success-message" role="status">
-          <span class="i-carbon-checkmark-filled" />
-          {{ success }}
-        </div>
+          <form class="form-area" @submit.prevent="handleRegister">
+            <div class="form-group">
+              <label class="form-label" for="reg-username">
+                <span class="i-carbon-user" />
+                用户名
+              </label>
+              <BaseInput
+                id="reg-username"
+                v-model="regUsername"
+                type="text"
+                placeholder="请输入用户名（3-32位）"
+                autocomplete="username"
+                required
+              />
+              <p v-if="regUsername && !regUsernameValid.valid" class="form-hint error">
+                {{ regUsernameValid.message }}
+              </p>
+            </div>
 
-        <BaseButton type="submit" variant="primary" block :loading="loading" class="submit-btn">
-          <span v-if="!loading" class="inline-flex items-center gap-2">
-            <span class="i-carbon-login" />
-            登录
-          </span>
-        </BaseButton>
-      </form>
+            <div class="form-group">
+              <label class="form-label" for="reg-password">
+                <span class="i-carbon-locked" />
+                密码
+              </label>
+              <BaseInput
+                id="reg-password"
+                v-model="regPassword"
+                type="password"
+                placeholder="请输入密码（至少6位）"
+                autocomplete="new-password"
+                required
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="reg-confirm">
+                <span class="i-carbon-locked" />
+                确认密码
+              </label>
+              <BaseInput
+                id="reg-confirm"
+                v-model="regConfirmPassword"
+                type="password"
+                placeholder="请再次输入密码"
+                autocomplete="new-password"
+                required
+              />
+              <p v-if="regConfirmPassword && !passwordsMatch.valid" class="form-hint error">
+                {{ passwordsMatch.message }}
+              </p>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="reg-card">
+                <span class="i-carbon-id-badge" />
+                卡密
+              </label>
+              <BaseInput
+                id="reg-card"
+                v-model="regCardCode"
+                type="text"
+                placeholder="请输入卡密（XXXE-XXXX-XXXX-XXXX）"
+                autocomplete="off"
+                required
+              />
+            </div>
+
+            <div v-if="regError" class="message error-message" role="alert">
+              <span class="i-carbon-warning-alt" />
+              {{ regError }}
+            </div>
+            <div v-if="regSuccess" class="message success-message" role="status">
+              <span class="i-carbon-checkmark-filled" />
+              {{ regSuccess }}
+            </div>
+
+            <BaseButton type="submit" variant="primary" block :loading="regLoading" class="submit-btn">
+              <span v-if="!regLoading" class="inline-flex items-center gap-2">
+                <span class="i-carbon-user-add" />
+                注册
+              </span>
+            </BaseButton>
+          </form>
+        </NTabPane>
+      </NTabs>
 
       <footer class="card-footer">
         <div class="footer-info">
           <span>Web v{{ appVersion }}</span>
           <span v-if="gameVersion">Game {{ gameVersion }}</span>
         </div>
-        <a href="https://github.com/liyangpengs/qq-farm-bot" target="_blank" rel="noopener noreferrer" class="github-link" aria-label="GitHub">
-          <span class="i-carbon-logo-github" />
-        </a>
+        <div class="footer-actions">
+          <a href="https://github.com/liyangpengs/qq-farm-bot" target="_blank" rel="noopener noreferrer" class="github-link" aria-label="GitHub">
+            <span class="i-carbon-logo-github" />
+          </a>
+        </div>
       </footer>
     </section>
   </main>
@@ -228,7 +427,7 @@ onMounted(fetchGameVersion)
 .login-card {
   position: relative;
   z-index: 1;
-  width: min(430px, 100%);
+  width: min(480px, 100%);
   padding: 30px;
   border: 1px solid rgba(58, 86, 68, 0.14);
   border-radius: 18px;
@@ -358,6 +557,18 @@ onMounted(fetchGameVersion)
   margin-top: 2px;
 }
 
+.register-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: var(--ui-primary-soft);
+  color: #2e714b;
+  font-size: 12px;
+}
+
 .card-footer {
   display: flex;
   align-items: center;
@@ -371,6 +582,12 @@ onMounted(fetchGameVersion)
 
 .footer-info {
   display: flex;
+  gap: 12px;
+}
+
+.footer-actions {
+  display: flex;
+  align-items: center;
   gap: 12px;
 }
 
